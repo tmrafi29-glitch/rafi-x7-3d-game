@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="bn">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>RAFI X7 • 3D Obby Race</title>
+<style>
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#8bd8ff;font-family:system-ui,-apple-system,Segoe UI,sans-serif;touch-action:none}
+#game{position:fixed;inset:0}canvas{display:block}
+#top{position:fixed;left:12px;right:12px;top:10px;display:flex;justify-content:space-between;gap:8px;pointer-events:none;color:#fff;text-shadow:0 2px 5px #123;font-weight:800}
+.pill{background:#102a43cc;border:1px solid #ffffff55;border-radius:14px;padding:8px 11px;font-size:13px}
+#help{position:fixed;top:58px;left:12px;max-width:220px;color:white;background:#102a43bb;padding:9px 11px;border-radius:12px;font-size:12px;line-height:1.45}
+#status{position:fixed;top:58px;right:12px;color:white;background:#102a43bb;padding:8px 10px;border-radius:12px;font-size:12px;max-width:48%;text-align:right}
+#controls{position:fixed;left:0;right:0;bottom:18px;display:flex;justify-content:space-between;align-items:end;padding:0 18px;pointer-events:none}
+.pad{display:grid;grid-template-columns:56px 56px 56px;grid-template-rows:56px 56px;gap:6px;pointer-events:auto}
+.ctrl{border:1px solid #ffffff88;background:#123a5ccc;color:white;border-radius:16px;font-size:23px;font-weight:900;box-shadow:0 4px 0 #0a2038aa;touch-action:none;user-select:none}
+.ctrl:active{transform:translateY(3px);box-shadow:0 1px 0 #0a2038aa}
+#up{grid-column:2;grid-row:1}#left{grid-column:1;grid-row:2}#down{grid-column:2;grid-row:2}#right{grid-column:3;grid-row:2}
+#jump{width:82px;height:82px;border-radius:50%;font-size:16px;background:#ff8c26e8}
+#overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#06192b88;padding:20px}
+.panel{width:min(430px,100%);background:#fff;border-radius:22px;padding:24px;text-align:center;box-shadow:0 18px 60px #0005}
+.panel h1{margin:0 0 8px;color:#173c66}.panel p{color:#42556a;line-height:1.5}
+.panel button{background:#1677ff;color:white;border:0;border-radius:14px;padding:13px 22px;font-size:16px;font-weight:800}
+.small{font-size:11px;color:#718096;margin-top:12px}
+@media(min-width:800px){#controls{padding:0 35px 10px}.ctrl{opacity:.85}}
+</style>
+</head>
+<body>
+<div id="game"></div>
+<div id="top"><div class="pill">🏁 RAFI X7 • 3D OBBY</div><div class="pill" id="players">খেলোয়াড়: 1</div><div class="pill" id="progress">দূরত্ব: 0%</div></div>
+<div id="help">⬆️ দৌড়াও • 🟠 JUMP দিয়ে লাফাও<br>প্ল্যাটফর্ম থেকে পড়ে গেলে আবার শুরু হবে।<br><b>একই লিংকে ঢুকলে</b> অন্য খেলোয়াড়দের দেখতে পাবে।</div>
+<div id="status">সার্ভারের সঙ্গে সংযোগ হচ্ছে…</div>
+<div id="controls">
+ <div class="pad">
+  <button class="ctrl" id="up">⬆</button><button class="ctrl" id="left">⬅</button><button class="ctrl" id="down">⬇</button><button class="ctrl" id="right">➡</button>
+ </div>
+ <button class="ctrl" id="jump">JUMP</button>
+</div>
+<div id="overlay"><div class="panel"><h1>🏁 3D Obby Race</h1><p>রঙিন প্ল্যাটফর্মে দৌড়াও, ঘূর্ণায়মান বাধা পার হও এবং ফিনিশ লাইনে পৌঁছাও!</p><button id="start">গেম শুরু করো</button><div class="small">অনলাইন মাল্টিপ্লেয়ারের জন্য সার্ভার চালু থাকা দরকার।</div></div></div>
+<script src="/socket.io/socket.io.js"></script>
+<script type="module">
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
+
+const mount=document.getElementById('game');
+const scene=new THREE.Scene(); scene.background=new THREE.Color(0x8bd8ff); scene.fog=new THREE.Fog(0x8bd8ff,45,150);
+const camera=new THREE.PerspectiveCamera(65,innerWidth/innerHeight,.1,300);
+const renderer=new THREE.WebGLRenderer({antialias:true}); renderer.setPixelRatio(Math.min(devicePixelRatio,1.8)); renderer.setSize(innerWidth,innerHeight); renderer.shadowMap.enabled=true; renderer.shadowMap.type=THREE.PCFSoftShadowMap; mount.appendChild(renderer.domElement);
+scene.add(new THREE.HemisphereLight(0xffffff,0x51728e,2));
+const sun=new THREE.DirectionalLight(0xffffff,2.4);sun.position.set(-10,25,12);sun.castShadow=true;sun.shadow.mapSize.set(1024,1024);scene.add(sun);
+const mat=(color,roughness=.72)=>new THREE.MeshStandardMaterial({color,roughness});
+const grass=mat(0x34c987), blue=mat(0x2687ff), yellow=mat(0xffd33d), pink=mat(0xff4e91), orange=mat(0xff8c32), dark=mat(0x25425f), white=mat(0xffffff);
+function box(w,h,d,m,x,y,z){const o=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),m);o.position.set(x,y,z);o.castShadow=true;o.receiveShadow=true;scene.add(o);return o}
+box(200,1,220,mat(0x6cc9f2),0,-8,-75); // sky floor far below
+// Course made from platforms along negative Z
+const platforms=[];
+function platform(x,y,z,w,d,color=0x39d98a){const o=box(w,.8,d,mat(color),x,y,z);platforms.push({x,y,z,w,d,mesh:o});return o}
+platform(0,0,2,12,12,0x35d6a0);
+platform(0,0,-10,9,12,0x45b8ff);
+platform(2,1,-22,8,10,0xffd34f);
+platform(-2,1,-33,8,10,0xff78a9);
+platform(-2,0,-45,10,10,0x43d9a3);
+platform(2,1,-57,8,10,0x9b83ff);
+platform(0,1,-69,10,10,0xffa04b);
+platform(0,0,-82,13,12,0x35d6a0);
+platform(0,0,-95,15,12,0x45b8ff);
+platform(0,0,-108,18,15,0xffd34f);
+// Decorative rails on course edges
+for(let z of [-4,-10,-22,-33,-45,-57,-69,-82,-95,-108]){
+ box(.25,.7,8,white,-5,1,z);box(.25,.7,8,white,5,1,z);
+}
+// rotating obstacle bars
+const spinners=[];
+function spinner(x,y,z,len,color){const pivot=new THREE.Group();pivot.position.set(x,y,z);scene.add(pivot);const bar=new THREE.Mesh(new THREE.BoxGeometry(len,.38,.65),mat(color));bar.castShadow=true;bar.receiveShadow=true;pivot.add(bar);spinners.push(pivot)}
+spinner(0,1.5,-10,8,0xff4e91);spinner(2,2.5,-22,7,0x3449ff);spinner(-2,2.5,-33,7,0xff8c32);spinner(2,1.5,-57,7,0xff4e91);spinner(0,1.5,-95,12,0x8c52ff);
+// finish gate
+box(.5,4,.5,white,-6,2,-108);box(.5,4,.5,white,6,2,-108);box(12,.6,.5,yellow,0,4,-108);
+for(let i=0;i<5;i++)box(2.4,.15,.5,i%2?dark:white,-4.8+i*2.4,3.65,-108);
+// clouds
+for(let i=0;i<25;i++){let x=(Math.random()-.5)*100,z=-Math.random()*125,y=12+Math.random()*20;const c=new THREE.Group();for(let j=0;j<3;j++){const s=new THREE.Mesh(new THREE.SphereGeometry(1.8+Math.random(),12,8),white);s.position.set(j*2,Math.random(),0);c.add(s)}c.position.set(x,y,z);scene.add(c)}
+// local player
+const player=new THREE.Group();scene.add(player);
+const body=new THREE.Mesh(new THREE.CapsuleGeometry(.48,.8,4,8),mat(0x1677ff));body.position.y=.9;body.castShadow=true;player.add(body);
+const head=new THREE.Mesh(new THREE.SphereGeometry(.34,16,12),mat(0xffd3a6));head.position.y=1.75;head.castShadow=true;player.add(head);
+const eyeMat=mat(0x152b45);
+for(let x of [-.12,.12]){const e=new THREE.Mesh(new THREE.SphereGeometry(.045,8,8),eyeMat);e.position.set(x,1.8,.29);player.add(e)}
+player.position.set(0,.4,2);
+let velocityY=0, grounded=false, started=false, finished=false, progress=0;
+const keys={forward:false,back:false,left:false,right:false,jump:false};
+function bindHold(id,key){const el=document.getElementById(id);const on=e=>{e.preventDefault();keys[key]=true};const off=e=>{e.preventDefault();keys[key]=false};el.addEventListener('pointerdown',on);['pointerup','pointercancel','pointerleave'].forEach(t=>el.addEventListener(t,off))}
+bindHold('up','forward');bindHold('down','back');bindHold('left','left');bindHold('right','right');
+const jumpBtn=document.getElementById('jump');jumpBtn.addEventListener('pointerdown',e=>{e.preventDefault();keys.jump=true});['pointerup','pointercancel','pointerleave'].forEach(t=>jumpBtn.addEventListener(t,e=>{e.preventDefault();keys.jump=false}));
+addEventListener('keydown',e=>{if(['ArrowUp','w','W'].includes(e.key))keys.forward=true;if(['ArrowDown','s','S'].includes(e.key))keys.back=true;if(['ArrowLeft','a','A'].includes(e.key))keys.left=true;if(['ArrowRight','d','D'].includes(e.key))keys.right=true;if(e.code==='Space')keys.jump=true});
+addEventListener('keyup',e=>{if(['ArrowUp','w','W'].includes(e.key))keys.forward=false;if(['ArrowDown','s','S'].includes(e.key))keys.back=false;if(['ArrowLeft','a','A'].includes(e.key))keys.left=false;if(['ArrowRight','d','D'].includes(e.key))keys.right=false;if(e.code==='Space')keys.jump=false});
+document.getElementById('start').onclick=()=>{started=true;document.getElementById('overlay').style.display='none';};
+let socket=null, myId=null;const others=new Map();
+try{socket=io();socket.on('connect',()=>{myId=socket.id;document.getElementById('status').textContent='🟢 অনলাইনে যুক্ত হয়েছে';});socket.on('disconnect',()=>document.getElementById('status').textContent='🔴 সংযোগ বিচ্ছিন্ন');socket.on('players',list=>{for(const p of list){if(p.id!==myId&&!others.has(p.id))makeOther(p)};for(const [id,o] of others){if(!list.some(p=>p.id===id)){scene.remove(o.mesh);others.delete(id)}};document.getElementById('players').textContent='খেলোয়াড়: '+(list.length||1)});socket.on('playerMoved',p=>{if(p.id!==myId){if(!others.has(p.id))makeOther(p);const o=others.get(p.id);o.target.set(p.x,p.y,p.z);o.mesh.rotation.y=p.rot||0}});socket.on('playerLeft',id=>{if(others.has(id)){scene.remove(others.get(id).mesh);others.delete(id)}})}catch(e){document.getElementById('status').textContent='একক খেলা';}
+function makeOther(p){const g=new THREE.Group();const b=new THREE.Mesh(new THREE.CapsuleGeometry(.48,.8,4,8),mat(p.color||0xff4e91));b.position.y=.9;g.add(b);const h=new THREE.Mesh(new THREE.SphereGeometry(.34,12,8),mat(0xffd3a6));h.position.y=1.75;g.add(h);scene.add(g);g.position.set(p.x||0,p.y||0,p.z||2);others.set(p.id,{mesh:g,target:new THREE.Vector3(p.x||0,p.y||0,p.z||2)})}
+const clock=new THREE.Clock();let sendTimer=0;
+function onPlatform(x,y,z){for(const p of platforms){if(x>p.x-p.w/2+.1&&x<p.x+p.w/2-.1&&z>p.z-p.d/2+.1&&z<p.z+p.d/2-.1&&y<=p.y+1.25&&y>=p.y-.2)return p}return null}
+function animate(){requestAnimationFrame(animate);const dt=Math.min(clock.getDelta(),.04);spinners.forEach((s,i)=>s.rotation.y+=dt*(i%2?2.1:-1.7));
+ if(started&&!finished){
+  const speed=8*dt;let dx=0,dz=0;if(keys.forward)dz-=speed;if(keys.back)dz+=speed;if(keys.left)dx-=speed;if(keys.right)dx+=speed;
+  if(dx||dz){const l=Math.hypot(dx,dz);player.position.x+=dx/l*speed;player.position.z+=dz/l*speed;player.rotation.y=Math.atan2(dx,-dz)}
+  player.position.x=Math.max(-5.6,Math.min(5.6,player.position.x));
+  const under=onPlatform(player.position.x,player.position.y,player.position.z);
+  if(under&&velocityY<=0&&player.position.y<=under.y+.45){player.position.y=under.y+.4;velocityY=0;grounded=true}else grounded=false;
+  if(keys.jump&&grounded){velocityY=8.8;grounded=false}velocityY-=22*dt;player.position.y+=velocityY*dt;
+  if(player.position.y< -7||player.position.z>7){player.position.set(0,.4,2);velocityY=0}
+  progress=Math.max(0,Math.min(100,Math.round((2-player.position.z)/110*100)));document.getElementById('progress').textContent='দূরত্ব: '+progress+'%';
+  if(player.position.z<-105&&player.position.y<4){finished=true;document.getElementById('overlay').style.display='flex';document.querySelector('.panel h1').textContent='🏆 তুমি জিতেছ!';document.querySelector('.panel p').textContent='অভিনন্দন! তুমি ফিনিশ লাইনে পৌঁছে গেছ। আবার খেলতে চাইলে শুরু চাপো।';document.getElementById('start').textContent='আবার খেলো';document.getElementById('start').onclick=()=>{player.position.set(0,.4,2);velocityY=0;finished=false;started=true;document.getElementById('overlay').style.display='none'};}
+  sendTimer+=dt;if(socket&&socket.connected&&sendTimer>.06){sendTimer=0;socket.emit('move',{x:player.position.x,y:player.position.y,z:player.position.z,rot:player.rotation.y,color:0x1677ff})}
+ }
+ for(const o of others.values()){o.mesh.position.lerp(o.target,Math.min(1,dt*10))}
+ const target=new THREE.Vector3(player.position.x,player.position.y+1.5,player.position.z+7);camera.position.lerp(target,Math.min(1,dt*4));camera.lookAt(player.position.x,player.position.y+1,player.position.z-5);
+ renderer.render(scene,camera)}
+animate();
+addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});
+</script>
+</body>
+</html>

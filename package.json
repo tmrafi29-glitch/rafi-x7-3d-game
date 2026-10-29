@@ -1,0 +1,11 @@
+{
+  "name": "rafi-x7-3d-obby-race",
+  "version": "1.0.0",
+  "description": "A simple mobile-friendly 3D obstacle course multiplayer browser game",
+  "main": "server.js",
+  "scripts": { "start": "node server.js" },
+  "dependencies": {
+    "express": "^4.21.2",
+    "socket.io": "^4.8.1"
+  }
+}
